@@ -31,7 +31,6 @@ class QRService {
     }
   }
 
-  // Generar código QR como SVG
   async generateQRSVG(text, options = {}) {
     try {
       const defaultOptions = {
@@ -61,17 +60,14 @@ class QRService {
     }
   }
 
-  // Generar código único para QR
   generateUniqueCode(type, prefix = 'QR') {
     const timestamp = Date.now().toString(36);
     const random = Math.random().toString(36).substring(2, 8);
     return `${prefix}_${type.toUpperCase()}_${timestamp}_${random}`.toUpperCase();
   }
 
-  // Crear nuevo QR en la base de datos y generar imagen
   async createQRCode(type, createdBy, description = null, regenerate = false) {
     try {
-      // Si regenerate es true, desactivar QRs antiguos del mismo tipo
       if (regenerate) {
         await QRModel.update(
           { isActive: false },
@@ -85,7 +81,6 @@ class QRService {
         );
       }
 
-      // Generar código único
       let code;
       let attempts = 0;
       const maxAttempts = 5;
@@ -102,7 +97,6 @@ class QRService {
         }
       } while (attempts < maxAttempts);
 
-      // Crear nuevo QR en la base de datos
       const qrRecord = await QRModel.create({
         code,
         type,
@@ -110,7 +104,6 @@ class QRService {
         description: description || `QR ${type} generado automáticamente`
       });
 
-      // Generar imagen del QR
       const qrImage = await this.generateQRImage(qrRecord.code, {
         width: 300,
         margin: 2
@@ -204,7 +197,6 @@ class QRService {
     }
   }
 
-  // Validar código QR escaneado
   async validateQRCode(scannedCode) {
     try {
       const qrRecord = await QRModel.findOne({
@@ -239,7 +231,6 @@ class QRService {
     }
   }
 
-  // Desactivar código QR
   async deactivateQRCode(qrId, userId) {
     try {
       const qrRecord = await QRModel.findByPk(qrId);
@@ -251,7 +242,6 @@ class QRService {
         };
       }
 
-      // Verificar que el usuario tenga permiso (admin o creador)
       const { User } = require('../models');
       const user = await User.findByPk(userId);
       if (user.role !== 'admin' && qrRecord.createdBy !== userId) {
@@ -277,13 +267,11 @@ class QRService {
     }
   }
 
-  // Generar par de QRs (entrada y salida)
   async generateQRPair(createdBy, companyName = 'Empresa') {
     try {
       const entryDescription = `QR de ENTRADA - ${companyName}`;
       const exitDescription = `QR de SALIDA - ${companyName}`;
 
-      // Desactivar QRs antiguos
       await QRModel.update(
         { isActive: false },
         {
@@ -294,13 +282,11 @@ class QRService {
         }
       );
 
-      // Crear QR de entrada
       const entryQR = await this.createQRCode('entry', createdBy, entryDescription, false);
       if (!entryQR.success) {
         throw new Error('Error creando QR de entrada');
       }
 
-      // Crear QR de salida
       const exitQR = await this.createQRCode('exit', createdBy, exitDescription, false);
       if (!exitQR.success) {
         throw new Error('Error creando QR de salida');
@@ -323,7 +309,6 @@ class QRService {
     }
   }
 
-  // Generar QR personalizado con datos específicos
   async generateCustomQR(data, options = {}) {
     try {
       const qrData = typeof data === 'object' ? JSON.stringify(data) : data;
