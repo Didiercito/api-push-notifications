@@ -30,7 +30,7 @@ const connectDB = async () => {
     console.log('🔗 Conexión a MySQL establecida correctamente');
     
     if (process.env.NODE_ENV === 'development') {
-      await sequelize.sync({ alter: true });
+      await sequelize.sync();
       console.log('📊 Modelos sincronizados con la base de datos');
     }
     
