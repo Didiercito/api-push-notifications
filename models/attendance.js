@@ -27,10 +27,21 @@ const Attendance = sequelize.define('Attendance', {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
     allowNull: false
+  },
+  isLate: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  minutesLate: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
   }
 }, {
   tableName: 'attendances',
   timestamps: true
 });
+
 
 module.exports = Attendance;
