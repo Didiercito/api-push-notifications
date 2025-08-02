@@ -1,5 +1,6 @@
 const { User, Attendance, QRCode } = require('../models');
 const NotificationService = require('../service/NotificationService');
+const { Op } = require('sequelize');
 
 class AttendanceController {
   async scanQR(req, res) {
@@ -14,7 +15,6 @@ class AttendanceController {
         });
       }
 
-      // Verificar que el código QR existe y está activo
       const qrRecord = await QRCode.findOne({
         where: {
           code: qrCode,
@@ -29,7 +29,6 @@ class AttendanceController {
         });
       }
 
-      // Obtener información del usuario
       const user = await User.findByPk(userId);
       if (!user) {
         return res.status(404).json({
@@ -38,14 +37,15 @@ class AttendanceController {
         });
       }
 
-      // Verificar si ya marcó este tipo de asistencia hoy
       const today = new Date().toISOString().split('T')[0];
+      const todayStart = new Date(today);
+
       const existingAttendance = await Attendance.findOne({
         where: {
           userId,
           type: qrRecord.type,
           timestamp: {
-            [require('sequelize').Op.gte]: new Date(today)
+            [Op.gte]: todayStart
           }
         }
       });
@@ -57,16 +57,16 @@ class AttendanceController {
         });
       }
 
-      // Si es salida, verificar que tenga entrada
       if (qrRecord.type === 'exit') {
         const entryToday = await Attendance.findOne({
           where: {
             userId,
             type: 'entry',
             timestamp: {
-              [require('sequelize').Op.gte]: new Date(today)
+              [Op.gte]: todayStart
             }
-          }
+          },
+          order: [['timestamp', 'ASC']]
         });
 
         if (!entryToday) {
@@ -77,22 +77,20 @@ class AttendanceController {
         }
       }
 
-      // Registrar asistencia
+      const now = new Date();
       const attendance = await Attendance.create({
         userId,
         type: qrRecord.type,
         qrCode: qrRecord.code,
-        timestamp: new Date()
+        timestamp: now
       });
 
-      // Preparar datos para notificación
       const fullName = `${user.firstName} ${user.lastName}`;
-      const time = new Date().toLocaleTimeString('es-ES', {
+      const time = now.toLocaleTimeString('es-ES', {
         hour: '2-digit',
         minute: '2-digit'
       });
 
-      // Enviar notificación a administradores
       try {
         if (qrRecord.type === 'entry') {
           await NotificationService.notifyAttendanceEntry(fullName, time);
@@ -103,9 +101,30 @@ class AttendanceController {
         console.log('Error enviando notificación:', error.message);
       }
 
-      // Determinar mensaje de respuesta
+      let workedHours = null;
+
+      if (qrRecord.type === 'exit') {
+        const entryToday = await Attendance.findOne({
+          where: {
+            userId,
+            type: 'entry',
+            timestamp: {
+              [Op.gte]: todayStart
+            }
+          },
+          order: [['timestamp', 'ASC']]
+        });
+
+        if (entryToday) {
+          const diffMs = now - new Date(entryToday.timestamp);
+          const hours = Math.floor(diffMs / 3600000);
+          const minutes = Math.floor((diffMs % 3600000) / 60000);
+          workedHours = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        }
+      }
+
       const typeMessage = qrRecord.type === 'entry' ? 'ENTRADA' : 'SALIDA';
-      const greeting = qrRecord.type === 'entry' 
+      const greeting = qrRecord.type === 'entry'
         ? `¡HOLA ${user.firstName.toUpperCase()}! QUE TENGAS BUEN DÍA HOY`
         : `¡HASTA MAÑANA ${user.firstName.toUpperCase()}! BUEN DESCANSO`;
 
@@ -116,7 +135,8 @@ class AttendanceController {
           attendance: {
             id: attendance.id,
             type: attendance.type,
-            timestamp: attendance.timestamp
+            timestamp: attendance.timestamp,
+            workedHours
           },
           animation: {
             type: typeMessage,
@@ -136,7 +156,6 @@ class AttendanceController {
     }
   }
 
-  // Obtener asistencias del día (para admins)
   async getTodayAttendances(req, res) {
     try {
       const { role } = req.user;
@@ -182,13 +201,11 @@ class AttendanceController {
     }
   }
 
-  // Obtener mis asistencias
   async getMyAttendances(req, res) {
     try {
       const { userId } = req.user;
       const { startDate, endDate } = req.query;
 
-      // Fechas por defecto (último mes)
       const defaultEndDate = new Date();
       const defaultStartDate = new Date();
       defaultStartDate.setMonth(defaultStartDate.getMonth() - 1);

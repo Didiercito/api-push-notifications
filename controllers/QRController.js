@@ -84,13 +84,10 @@ class QRController {
     }
   }
 
-  // Obtener códigos QR activos
   async getQRCodes(req, res) {
     try {
       const { type, includeImages = 'false' } = req.query;
       const { role } = req.user;
-
-      // Solo administradores pueden ver todos los QRs
       if (role !== 'admin') {
         return res.status(403).json({
           success: false,
