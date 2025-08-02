@@ -15,6 +15,7 @@ class AttendanceController {
         });
       }
 
+      // Verificar que el código QR existe y está activo
       const qrRecord = await QRCode.findOne({
         where: {
           code: qrCode,
@@ -29,6 +30,7 @@ class AttendanceController {
         });
       }
 
+      // Obtener información del usuario
       const user = await User.findByPk(userId);
       if (!user) {
         return res.status(404).json({
@@ -37,15 +39,14 @@ class AttendanceController {
         });
       }
 
+      // Verificar si ya marcó este tipo de asistencia hoy
       const today = new Date().toISOString().split('T')[0];
-      const todayStart = new Date(today);
-
       const existingAttendance = await Attendance.findOne({
         where: {
           userId,
           type: qrRecord.type,
           timestamp: {
-            [Op.gte]: todayStart
+            [Op.gte]: new Date(today)
           }
         }
       });
@@ -57,16 +58,16 @@ class AttendanceController {
         });
       }
 
+      // Si es salida, verificar que tenga entrada
       if (qrRecord.type === 'exit') {
         const entryToday = await Attendance.findOne({
           where: {
             userId,
             type: 'entry',
             timestamp: {
-              [Op.gte]: todayStart
+              [Op.gte]: new Date(today)
             }
-          },
-          order: [['timestamp', 'ASC']]
+          }
         });
 
         if (!entryToday) {
@@ -77,20 +78,22 @@ class AttendanceController {
         }
       }
 
-      const now = new Date();
+      // Registrar asistencia
       const attendance = await Attendance.create({
         userId,
         type: qrRecord.type,
         qrCode: qrRecord.code,
-        timestamp: now
+        timestamp: new Date()
       });
 
+      // Preparar datos para notificación
       const fullName = `${user.firstName} ${user.lastName}`;
-      const time = now.toLocaleTimeString('es-ES', {
+      const time = new Date().toLocaleTimeString('es-ES', {
         hour: '2-digit',
         minute: '2-digit'
       });
 
+      // Enviar notificación a administradores
       try {
         if (qrRecord.type === 'entry') {
           await NotificationService.notifyAttendanceEntry(fullName, time);
@@ -101,50 +104,56 @@ class AttendanceController {
         console.log('Error enviando notificación:', error.message);
       }
 
+      // Calcular horas trabajadas si es salida
       let workedHours = null;
-
       if (qrRecord.type === 'exit') {
-        const entryToday = await Attendance.findOne({
+        const lastEntry = await Attendance.findOne({
           where: {
             userId,
             type: 'entry',
             timestamp: {
-              [Op.gte]: todayStart
+              [Op.lt]: attendance.timestamp,
+              [Op.gte]: new Date(today)
             }
           },
-          order: [['timestamp', 'ASC']]
+          order: [['timestamp', 'DESC']]
         });
 
-        if (entryToday) {
-          const diffMs = now - new Date(entryToday.timestamp);
-          const hours = Math.floor(diffMs / 3600000);
-          const minutes = Math.floor((diffMs % 3600000) / 60000);
-          workedHours = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        if (lastEntry) {
+          const diffMs = attendance.timestamp - lastEntry.timestamp;
+          const diffHours = diffMs / (1000 * 60 * 60);
+          workedHours = parseFloat(diffHours.toFixed(2));
         }
       }
 
+      // Determinar mensaje de respuesta
       const typeMessage = qrRecord.type === 'entry' ? 'ENTRADA' : 'SALIDA';
-      const greeting = qrRecord.type === 'entry'
+      const greeting = qrRecord.type === 'entry' 
         ? `¡HOLA ${user.firstName.toUpperCase()}! QUE TENGAS BUEN DÍA HOY`
         : `¡HASTA MAÑANA ${user.firstName.toUpperCase()}! BUEN DESCANSO`;
+
+      const responseData = {
+        attendance: {
+          id: attendance.id,
+          type: attendance.type,
+          timestamp: attendance.timestamp
+        },
+        animation: {
+          type: typeMessage,
+          greeting,
+          time,
+          user: fullName
+        }
+      };
+
+      if (workedHours !== null) {
+        responseData.workedHours = workedHours;
+      }
 
       res.json({
         success: true,
         message: `${typeMessage} registrada exitosamente`,
-        data: {
-          attendance: {
-            id: attendance.id,
-            type: attendance.type,
-            timestamp: attendance.timestamp,
-            workedHours
-          },
-          animation: {
-            type: typeMessage,
-            greeting,
-            time,
-            user: fullName
-          }
-        }
+        data: responseData
       });
 
     } catch (error) {
@@ -156,6 +165,7 @@ class AttendanceController {
     }
   }
 
+  // Obtener asistencias del día (para admins)
   async getTodayAttendances(req, res) {
     try {
       const { role } = req.user;
@@ -172,7 +182,7 @@ class AttendanceController {
       const attendances = await Attendance.findAll({
         where: {
           timestamp: {
-            [require('sequelize').Op.gte]: new Date(today)
+            [Op.gte]: new Date(today)
           }
         },
         include: [{
@@ -201,11 +211,13 @@ class AttendanceController {
     }
   }
 
+  // Obtener mis asistencias
   async getMyAttendances(req, res) {
     try {
       const { userId } = req.user;
       const { startDate, endDate } = req.query;
 
+      // Fechas por defecto (último mes)
       const defaultEndDate = new Date();
       const defaultStartDate = new Date();
       defaultStartDate.setMonth(defaultStartDate.getMonth() - 1);
@@ -217,7 +229,7 @@ class AttendanceController {
         where: {
           userId,
           timestamp: {
-            [require('sequelize').Op.between]: [start, end]
+            [Op.between]: [start, end]
           }
         },
         order: [['timestamp', 'DESC']]
@@ -268,7 +280,7 @@ class AttendanceController {
         where: {
           type: 'entry',
           timestamp: {
-            [require('sequelize').Op.gte]: new Date(today)
+            [Op.gte]: new Date(today)
           }
         },
         distinct: true,
@@ -280,7 +292,7 @@ class AttendanceController {
         where: {
           type: 'exit',
           timestamp: {
-            [require('sequelize').Op.gte]: new Date(today)
+            [Op.gte]: new Date(today)
           }
         },
         distinct: true,
@@ -317,7 +329,7 @@ class AttendanceController {
         where: {
           userId,
           timestamp: {
-            [require('sequelize').Op.gte]: new Date(today)
+            [Op.gte]: new Date(today)
           }
         },
         order: [['timestamp', 'ASC']]
