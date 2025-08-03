@@ -79,7 +79,7 @@ class AttendanceController {
       const today = new Date().toISOString().split('T')[0];
       console.log('🔍 Fecha de hoy:', today);
 
-      // ✅ NUEVA LÓGICA MEJORADA - Verificar entrada y salida por separado
+      // ✅ VERIFICACIÓN CORREGIDA - Verificar entrada y salida por separado
       console.log('🔍 Verificando si ya tiene entrada hoy...');
       const hasEntryToday = await Attendance.findOne({
         where: {
@@ -122,7 +122,7 @@ class AttendanceController {
         });
       }
 
-      // ✅ VALIDACIONES ESPECÍFICAS POR TIPO DE QR
+      // ✅ VALIDACIONES ESPECÍFICAS POR TIPO DE QR - CORREGIDAS
       if (qrRecord.type === 'entry') {
         console.log('🔍 Validando QR de ENTRADA...');
         if (hasEntryToday) {
@@ -133,6 +133,7 @@ class AttendanceController {
           });
         }
         console.log('✅ Validación de entrada PASÓ - puede marcar entrada');
+        
       } else if (qrRecord.type === 'exit') {
         console.log('🔍 Validando QR de SALIDA...');
         if (!hasEntryToday) {
@@ -150,6 +151,7 @@ class AttendanceController {
           });
         }
         console.log('✅ Validación de salida PASÓ - puede marcar salida');
+        
       } else {
         console.log('❌ ERROR: Tipo de QR no válido');
         return res.status(400).json({
